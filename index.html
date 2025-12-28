@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的精確記帳 App</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root { --primary: #2ecc71; --danger: #e74c3c; --dark: #2c3e50; --gray: #f4f7f6; }
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: var(--gray); margin: 0; padding: 15px; }
+        .container { max-width: 500px; margin: auto; }
+        .card { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 15px; }
+        .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
+        .stat-box { background: white; padding: 15px; border-radius: 12px; text-align: center; border: 1px solid #eee; }
+        .value { font-size: 1.5rem; font-weight: bold; color: var(--dark); display: block; margin-top: 5px; }
+        .label { font-size: 0.8rem; color: #888; }
+        input { width: 100%; padding: 10px; margin: 5px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        .item-row { display: grid; grid-template-columns: 1fr 100px 40px; gap: 5px; margin-bottom: 5px; }
+        .delete-btn { background: #ff7675; padding: 5px; font-size: 12px; }
+        .raw-data-area { background: #273036; color: #3ae374; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 11px; white-space: pre-wrap; display: none; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>💰 精確財務 Dashboard</h2>
+
+    <div class="stat-grid">
+        <div class="stat-box"><span class="label">本月剩餘薪資</span><span id="netSavings" class="value">$0</span></div>
+        <div class="stat-box"><span class="label">生活費餘額</span><span id="livingLeft" class="value">$0</span></div>
+    </div>
+
+    <div class="card"><canvas id="budgetChart" style="max-height: 180px;"></canvas></div>
+
+    <div class="card">
+        <h3>新增一筆生活費</h3>
+        <input type="number" id="newExpense" placeholder="輸入金額" inputmode="numeric">
+        <button onclick="addExpense()">確認紀錄</button>
+    </div>
+
+    <div class="card">
+        <h3>預算與必要開銷詳列</h3>
+        <label class="label">每月總薪資</label>
+        <input type="number" id="salary" onchange="saveAll()">
+        
+        <label class="label">必要開銷項目 (房租、電話等)</label>
+        <div id="fixedItemsContainer"></div>
+        <button style="background: #3498db; font-size: 13px; padding: 8px;" onclick="addFixedItemRow()">+ 新增項目</button>
+        
+        <hr style="margin: 20px 0; border: 0.5px solid #eee;">
+        <label class="label">本月生活費上限</label>
+        <input type="number" id="livingLimit" onchange="saveAll()">
+    </div>
+
+    <button style="background: #34495e; font-size: 12px;" onclick="toggleRawData()">顯示原始 JSON 資料</button>
+    <div id="rawData" class="raw-data-area"></div>
+    <button style="background:#aaa; margin-top: 10px; font-size: 12px;" onclick="resetData()">重置所有數據</button>
+</div>
+
+<script>
+    let spentLiving = 0;
+    let fixedItems = [];
+    let chart;
+
+    function init() {
+        const saved = JSON.parse(localStorage.getItem('finance_v2')) || {};
+        document.getElementById('salary').value = saved.salary || 50000;
+        document.getElementById('livingLimit').value = saved.limit || 15000;
+        spentLiving = saved.spent || 0;
+        fixedItems = saved.fixedItems || [{name: '房租', amount: 15000}];
+        
+        renderFixedItems();
+        updateUI();
+    }
+
+    function renderFixedItems() {
+        const container = document.getElementById('fixedItemsContainer');
+        container.innerHTML = '';
+        fixedItems.forEach((item, index) => {
+            const row = document.createElement('div');
+            row.className = 'item-row';
+            row.innerHTML = `
+                <input type="text" placeholder="項目" value="${item.name}" onchange="updateItem(${index}, 'name', this.value)">
+                <input type="number" placeholder="金額" value="${item.amount}" onchange="updateItem(${index}, 'amount', this.value)">
+                <button class="delete-btn" onclick="removeFixedItem(${index})">✕</button>
+            `;
+            container.appendChild(row);
+        });
+    }
+
+    function addFixedItemRow() {
+        fixedItems.push({name: '', amount: 0});
+        renderFixedItems();
+        saveAll();
+    }
+
+    function updateItem(index, field, value) {
+        fixedItems[index][field] = field === 'amount' ? parseFloat(value) || 0 : value;
+        saveAll();
+    }
+
+    function removeFixedItem(index) {
+        fixedItems.splice(index, 1);
+        renderFixedItems();
+        saveAll();
+    }
+
+    function addExpense() {
+        const input = document.getElementById('newExpense');
+        const val = parseFloat(input.value);
+        if (val > 0) {
+            spentLiving += val;
+            input.value = '';
+            saveAll();
+        }
+    }
+
+    function saveAll() {
+        const totalFixed = fixedItems.reduce((sum, item) => sum + (item.amount || 0), 0);
+        const data = {
+            salary: parseFloat(document.getElementById('salary').value) || 0,
+            fixedItems: fixedItems,
+            totalFixed: totalFixed,
+            limit: parseFloat(document.getElementById('livingLimit').value) || 0,
+            spent: spentLiving,
+            lastUpdate: new Date().toLocaleString()
+        };
+        localStorage.setItem('finance_v2', JSON.stringify(data));
+        updateUI();
+    }
+
+    function updateUI() {
+        const salary = parseFloat(document.getElementById('salary').value) || 0;
+        const totalFixed = fixedItems.reduce((sum, item) => sum + (item.amount || 0), 0);
+        const limit = parseFloat(document.getElementById('livingLimit').value) || 0;
+        const netBalance = salary - totalFixed - spentLiving;
+
+        document.getElementById('netSavings').innerText = `$${Math.round(netBalance).toLocaleString()}`;
+        document.getElementById('livingLeft').innerText = `$${Math.round(limit - spentLiving).toLocaleString()}`;
+        
+        const currentData = localStorage.getItem('finance_v2');
+        document.getElementById('rawData').innerText = JSON.stringify(JSON.parse(currentData), null, 4);
+
+        updateChart(totalFixed, spentLiving, netBalance);
+    }
+
+    function toggleRawData() {
+        const area = document.getElementById('rawData');
+        area.style.display = area.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function updateChart(fixed, living, savings) {
+        const ctx = document.getElementById('budgetChart').getContext('2d');
+        if (chart) chart.destroy();
+        chart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['必要(加總)', '生活費', '剩餘'],
+                datasets: [{ data: [fixed, living, Math.max(0, savings)], backgroundColor: ['#3498db', '#e74c3c', '#2ecc71'] }]
+            },
+            options: { plugins: { legend: { position: 'bottom' } } }
+        });
+    }
+
+    function resetData() { if (confirm('確定重置？')) { localStorage.clear(); location.reload(); } }
+
+    init();
+</script>
+</body>
+</html>
