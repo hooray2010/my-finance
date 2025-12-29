@@ -75,13 +75,12 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
     import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-    // 🔴 請確保這部分的 ID 都是正確的
     const firebaseConfig = {
         apiKey: "AIzaSyCgMm4JQ95mH-JOAcBsnlHz9Q7ceiF3H2E",
         authDomain: "my-finance-app-99fda.firebaseapp.com",
         projectId: "my-finance-app-99fda",
         storageBucket: "my-finance-app-99fda.firebasestorage.app",
-        messagingSenderId: "476029346804", // 幫你修正了這個 ID
+        messagingSenderId: "476029346804",
         appId: "1:476029346804:web:84edfef6015a3900270fa1"
     };
 
@@ -120,10 +119,11 @@
     };
 
     function renderUI() {
-        const salary = Number(currentData.salary) || 0;
-        const limit = Number(currentData.limit) || 0;
-        const spentFood = Number(currentData.spentFood) || 0;
-        const spentOther = Number(currentData.spentOther) || 0;
+        // 強制數值化，防止字串干擾運算
+        const salary = parseFloat(currentData.salary) || 0;
+        const limit = parseFloat(currentData.limit) || 0;
+        const spentFood = parseFloat(currentData.spentFood) || 0;
+        const spentOther = parseFloat(currentData.spentOther) || 0;
         const totalSpent = spentFood + spentOther;
         
         document.getElementById('salary').value = salary;
@@ -138,8 +138,11 @@
             container.appendChild(row);
         });
 
-        const totalFixed = (currentData.fixedItems || []).reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+        const totalFixed = (currentData.fixedItems || []).reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
+        
+        // 核心邏輯：預先扣除 limit
         const netBalance = salary - totalFixed - limit;
+        // 核心邏輯：生活費餘額 = 上限 - (吃喝 + 其他)
         const livingRemaining = limit - totalSpent;
 
         document.getElementById('netSavings').innerText = `$${Math.round(netBalance).toLocaleString()}`;
@@ -165,14 +168,15 @@
     }
 
     window.addExpense = async (type) => {
-        const val = parseFloat(document.getElementById(type === 'food' ? 'foodAmount' : 'otherAmount').value) || 0;
+        const inputId = type === 'food' ? 'foodAmount' : 'otherAmount';
+        const val = parseFloat(document.getElementById(inputId).value) || 0;
         if (val <= 0) return;
         
         if (type === 'food') {
-            currentData.spentFood = (currentData.spentFood || 0) + val;
+            currentData.spentFood = (parseFloat(currentData.spentFood) || 0) + val;
             document.getElementById('foodAmount').value = '';
         } else {
-            currentData.spentOther = (currentData.spentOther || 0) + val;
+            currentData.spentOther = (parseFloat(currentData.spentOther) || 0) + val;
             const note = document.getElementById('otherNote').value;
             if (!currentData.otherLogs) currentData.otherLogs = [];
             currentData.otherLogs.push({ amount: val, note, time: new Date().toLocaleString() });
