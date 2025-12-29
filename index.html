@@ -72,10 +72,11 @@
 </div>
 
 <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+    // 將原本的 gstatic 換成 jsdelivr，這通常更穩定
+    import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.7.1/firebase-app.js";
+    import { getFirestore, doc, onSnapshot, setDoc } from "https://cdn.jsdelivr.net/npm/firebase@10.7.1/firebase-firestore.js";
 
-    // 🔴 這裡替換成你的 Config 🔴
+    // 🔴 這裡依然要放你的 Firebase Config 🔴
     const firebaseConfig = {
     apiKey: "AIzaSyCgMm4JQ95mH-JOAcBsnlHz9Q7ceiF3H2E",
     authDomain: "my-finance-app-99fda.firebaseapp.com",
@@ -84,6 +85,8 @@
     messagingSenderId: "476029346804",
     appId: "1:476029346804:web:84edfef6015a3900270fa1"
     };
+    
+    // ... 後面的程式碼保持不變
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
