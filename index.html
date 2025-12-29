@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>我的精確記帳 App</title>
+    <title>我的雲端記帳 App</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root { --primary: #2ecc71; --danger: #e74c3c; --dark: #2c3e50; --gray: #f4f7f6; }
@@ -18,13 +18,14 @@
         button { width: 100%; padding: 12px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 10px; }
         .item-row { display: grid; grid-template-columns: 1fr 100px 40px; gap: 5px; margin-bottom: 5px; }
         .delete-btn { background: #ff7675; padding: 5px; font-size: 12px; }
-        .raw-data-area { background: #273036; color: #3ae374; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 11px; white-space: pre-wrap; display: none; margin-top: 10px; }
+        .cloud-status { text-align: center; font-size: 12px; color: #2ecc71; margin-bottom: 10px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>💰 精確財務 Dashboard</h2>
+    <h2>☁️ 雲端同步 Dashboard</h2>
+    <div id="status" class="cloud-status">正在連線雲端資料庫...</div>
 
     <div class="stat-grid">
         <div class="stat-box"><span class="label">本月剩餘薪資</span><span id="netSavings" class="value">$0</span></div>
@@ -36,136 +37,126 @@
     <div class="card">
         <h3>新增一筆生活費</h3>
         <input type="number" id="newExpense" placeholder="輸入金額" inputmode="numeric">
-        <button onclick="addExpense()">確認紀錄</button>
+        <button onclick="handleAddExpense()">確認紀錄</button>
     </div>
 
     <div class="card">
         <h3>預算與必要開銷詳列</h3>
         <label class="label">每月總薪資</label>
-        <input type="number" id="salary" onchange="saveAll()">
+        <input type="number" id="salary" onchange="triggerUpdate()">
         
-        <label class="label">必要開銷項目 (房租、電話等)</label>
+        <label class="label">必要開銷項目</label>
         <div id="fixedItemsContainer"></div>
         <button style="background: #3498db; font-size: 13px; padding: 8px;" onclick="addFixedItemRow()">+ 新增項目</button>
         
         <hr style="margin: 20px 0; border: 0.5px solid #eee;">
-        <label class="label">本月生活費上限</label>
-        <input type="number" id="livingLimit" onchange="saveAll()">
+        <label class="label">生活費上限</label>
+        <input type="number" id="livingLimit" onchange="triggerUpdate()">
     </div>
-
-    <button style="background: #34495e; font-size: 12px;" onclick="toggleRawData()">顯示原始 JSON 資料</button>
-    <div id="rawData" class="raw-data-area"></div>
-    <button style="background:#aaa; margin-top: 10px; font-size: 12px;" onclick="resetData()">重置所有數據</button>
 </div>
 
-<script>
-    let spentLiving = 0;
-    let fixedItems = [];
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    // 🔴 請在此替換成你自己的 Firebase Config 🔴
+    const firebaseConfig = {
+        apiKey: "AIzaSyCgMm4JQ95mH-JOAcBsnlHz9Q7ceiF3H2E",
+        authDomain: "my-finance-app-99fda.firebaseapp.com",
+        projectId: "my-finance-app-99fda",
+        storageBucket: "my-finance-app-99fda.firebasestorage.app",
+        messagingSenderId: "476029346804",
+        appId: "1:476029346804:web:84edfef6015a3900270fa1"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const docRef = doc(db, "family_account", "monthly_data");
+
+    let currentData = {
+        salary: 50000,
+        fixedItems: [{name: '房租', amount: 15000}],
+        limit: 15000,
+        spent: 0
+    };
     let chart;
 
-    function init() {
-        const saved = JSON.parse(localStorage.getItem('finance_v2')) || {};
-        document.getElementById('salary').value = saved.salary || 50000;
-        document.getElementById('livingLimit').value = saved.limit || 15000;
-        spentLiving = saved.spent || 0;
-        fixedItems = saved.fixedItems || [{name: '房租', amount: 15000}];
-        
-        renderFixedItems();
-        updateUI();
-    }
+    // 監聽雲端資料 (當家人更新時，你也會立刻更新)
+    onSnapshot(docRef, (docSnap) => {
+        if (docSnap.exists()) {
+            currentData = docSnap.data();
+            renderUI();
+            document.getElementById('status').innerText = "✅ 雲端同步中";
+        } else {
+            document.getElementById('status').innerText = "🆕 初次使用，請開始設定";
+        }
+    });
 
-    function renderFixedItems() {
+    function renderUI() {
+        document.getElementById('salary').value = currentData.salary;
+        document.getElementById('livingLimit').value = currentData.limit;
+        
         const container = document.getElementById('fixedItemsContainer');
         container.innerHTML = '';
-        fixedItems.forEach((item, index) => {
+        currentData.fixedItems.forEach((item, index) => {
             const row = document.createElement('div');
             row.className = 'item-row';
             row.innerHTML = `
-                <input type="text" placeholder="項目" value="${item.name}" onchange="updateItem(${index}, 'name', this.value)">
-                <input type="number" placeholder="金額" value="${item.amount}" onchange="updateItem(${index}, 'amount', this.value)">
+                <input type="text" value="${item.name}" onchange="updateItem(${index}, 'name', this.value)">
+                <input type="number" value="${item.amount}" onchange="updateItem(${index}, 'amount', this.value)">
                 <button class="delete-btn" onclick="removeFixedItem(${index})">✕</button>
             `;
             container.appendChild(row);
         });
-    }
 
-    function addFixedItemRow() {
-        fixedItems.push({name: '', amount: 0});
-        renderFixedItems();
-        saveAll();
-    }
-
-    function updateItem(index, field, value) {
-        fixedItems[index][field] = field === 'amount' ? parseFloat(value) || 0 : value;
-        saveAll();
-    }
-
-    function removeFixedItem(index) {
-        fixedItems.splice(index, 1);
-        renderFixedItems();
-        saveAll();
-    }
-
-    function addExpense() {
-        const input = document.getElementById('newExpense');
-        const val = parseFloat(input.value);
-        if (val > 0) {
-            spentLiving += val;
-            input.value = '';
-            saveAll();
-        }
-    }
-
-    function saveAll() {
-        const totalFixed = fixedItems.reduce((sum, item) => sum + (item.amount || 0), 0);
-        const data = {
-            salary: parseFloat(document.getElementById('salary').value) || 0,
-            fixedItems: fixedItems,
-            totalFixed: totalFixed,
-            limit: parseFloat(document.getElementById('livingLimit').value) || 0,
-            spent: spentLiving,
-            lastUpdate: new Date().toLocaleString()
-        };
-        localStorage.setItem('finance_v2', JSON.stringify(data));
-        updateUI();
-    }
-
-    function updateUI() {
-        const salary = parseFloat(document.getElementById('salary').value) || 0;
-        const totalFixed = fixedItems.reduce((sum, item) => sum + (item.amount || 0), 0);
-        const limit = parseFloat(document.getElementById('livingLimit').value) || 0;
-        const netBalance = salary - totalFixed - spentLiving;
-
-        document.getElementById('netSavings').innerText = `$${Math.round(netBalance).toLocaleString()}`;
-        document.getElementById('livingLeft').innerText = `$${Math.round(limit - spentLiving).toLocaleString()}`;
+        const totalFixed = currentData.fixedItems.reduce((sum, i) => sum + (i.amount || 0), 0);
+        const netBalance = currentData.salary - totalFixed - currentData.spent;
         
-        const currentData = localStorage.getItem('finance_v2');
-        document.getElementById('rawData').innerText = JSON.stringify(JSON.parse(currentData), null, 4);
+        document.getElementById('netSavings').innerText = `$${Math.round(netBalance).toLocaleString()}`;
+        document.getElementById('livingLeft').innerText = `$${Math.round(currentData.limit - currentData.spent).toLocaleString()}`;
 
-        updateChart(totalFixed, spentLiving, netBalance);
-    }
-
-    function toggleRawData() {
-        const area = document.getElementById('rawData');
-        area.style.display = area.style.display === 'none' ? 'block' : 'none';
-    }
-
-    function updateChart(fixed, living, savings) {
         const ctx = document.getElementById('budgetChart').getContext('2d');
         if (chart) chart.destroy();
         chart = new Chart(ctx, {
             type: 'doughnut',
             data: {
-                labels: ['必要(加總)', '生活費', '剩餘'],
-                datasets: [{ data: [fixed, living, Math.max(0, savings)], backgroundColor: ['#3498db', '#e74c3c', '#2ecc71'] }]
-            },
-            options: { plugins: { legend: { position: 'bottom' } } }
+                labels: ['必要', '生活費', '剩餘'],
+                datasets: [{ data: [totalFixed, currentData.spent, Math.max(0, netBalance)], backgroundColor: ['#3498db', '#e74c3c', '#2ecc71'] }]
+            }
         });
     }
 
-    function resetData() { if (confirm('確定重置？')) { localStorage.clear(); location.reload(); } }
+    // 全域函數讓按鈕可以呼叫
+    window.triggerUpdate = async () => {
+        currentData.salary = parseFloat(document.getElementById('salary').value) || 0;
+        currentData.limit = parseFloat(document.getElementById('livingLimit').value) || 0;
+        await setDoc(docRef, currentData);
+    };
 
-    init();
+    window.updateItem = async (index, field, value) => {
+        currentData.fixedItems[index][field] = field === 'amount' ? parseFloat(value) || 0 : value;
+        await setDoc(docRef, currentData);
+    };
+
+    window.addFixedItemRow = async () => {
+        currentData.fixedItems.push({name: '', amount: 0});
+        await setDoc(docRef, currentData);
+    };
+
+    window.removeFixedItem = async (index) => {
+        currentData.fixedItems.splice(index, 1);
+        await setDoc(docRef, currentData);
+    };
+
+    window.handleAddExpense = async () => {
+        const input = document.getElementById('newExpense');
+        const val = parseFloat(input.value);
+        if (val > 0) {
+            currentData.spent += val;
+            input.value = '';
+            await setDoc(docRef, currentData);
+        }
+    };
 </script>
 </body>
 </html>
