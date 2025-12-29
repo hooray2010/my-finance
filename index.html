@@ -3,29 +3,39 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>我的雲端記帳 App</title>
+    <title>雲端記帳 - 分類進階版</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        :root { --primary: #2ecc71; --danger: #e74c3c; --dark: #2c3e50; --gray: #f4f7f6; }
+        :root { --primary: #2ecc71; --danger: #e74c3c; --warning: #f1c40f; --dark: #2c3e50; --gray: #f4f7f6; }
         body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: var(--gray); margin: 0; padding: 15px; }
         .container { max-width: 500px; margin: auto; }
         .card { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 15px; }
+        .month-selector { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 20px; }
+        .month-selector select { padding: 10px; border-radius: 8px; border: 1px solid #ddd; font-size: 1rem; font-weight: bold; }
         .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
         .stat-box { background: white; padding: 15px; border-radius: 12px; text-align: center; border: 1px solid #eee; }
         .value { font-size: 1.5rem; font-weight: bold; color: var(--dark); display: block; margin-top: 5px; }
         .label { font-size: 0.8rem; color: #888; }
-        input { width: 100%; padding: 10px; margin: 5px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
+        input, select.input-field { width: 100%; padding: 10px; margin: 5px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
         button { width: 100%; padding: 12px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        .btn-food { background: #ff7675; }
+        .btn-other { background: #74b9ff; }
         .item-row { display: grid; grid-template-columns: 1fr 100px 40px; gap: 5px; margin-bottom: 5px; }
-        .delete-btn { background: #ff7675; padding: 5px; font-size: 12px; }
-        .cloud-status { text-align: center; font-size: 12px; color: #2ecc71; margin-bottom: 10px; }
+        .delete-btn { background: #ff7675; padding: 5px; font-size: 12px; border: none; border-radius: 4px; color: white; }
+        .cloud-status { text-align: center; font-size: 12px; color: #2ecc71; margin-bottom: 5px; }
+        .raw-data-area { background: #273036; color: #3ae374; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 11px; white-space: pre-wrap; display: none; margin-top: 10px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>☁️ 雲端同步 Dashboard</h2>
-    <div id="status" class="cloud-status">正在連線雲端資料庫...</div>
+    <h2>☁️ 雲端分類 Dashboard</h2>
+    <div id="status" class="cloud-status">正在同步...</div>
+
+    <div class="month-selector">
+        <label>選擇月份：</label>
+        <select id="currentMonth" onchange="switchMonth()"></select>
+    </div>
 
     <div class="stat-grid">
         <div class="stat-box"><span class="label">本月剩餘薪資</span><span id="netSavings" class="value">$0</span></div>
@@ -35,24 +45,34 @@
     <div class="card"><canvas id="budgetChart" style="max-height: 180px;"></canvas></div>
 
     <div class="card">
-        <h3>新增一筆生活費</h3>
-        <input type="number" id="newExpense" placeholder="輸入金額" inputmode="numeric">
-        <button onclick="handleAddExpense()">確認紀錄</button>
+        <h3>快速記帳</h3>
+        
+        <div style="margin-bottom: 15px; padding: 10px; border: 1px solid #ffeaa7; border-radius: 10px;">
+            <span class="label">🍔 吃喝 (自動紀錄)</span>
+            <input type="number" id="foodAmount" placeholder="輸入金額" inputmode="numeric">
+            <button class="btn-food" onclick="addExpense('food')">紀錄吃喝</button>
+        </div>
+
+        <div style="padding: 10px; border: 1px solid #dfe6e9; border-radius: 10px;">
+            <span class="label">📦 其他 (可填備註)</span>
+            <input type="number" id="otherAmount" placeholder="輸入金額" inputmode="numeric">
+            <input type="text" id="otherNote" placeholder="備註 (例如: 買衣服、看電影)">
+            <button class="btn-other" onclick="addExpense('other')">紀錄其他</button>
+        </div>
     </div>
 
     <div class="card">
         <h3>預算與必要開銷詳列</h3>
-        <label class="label">每月總薪資</label>
-        <input type="number" id="salary" onchange="triggerUpdate()">
-        
-        <label class="label">必要開銷項目</label>
+        <label class="label">薪資</label><input type="number" id="salary" onchange="triggerUpdate()">
         <div id="fixedItemsContainer"></div>
-        <button style="background: #3498db; font-size: 13px; padding: 8px;" onclick="addFixedItemRow()">+ 新增項目</button>
-        
+        <button style="background: #3498db; font-size: 13px; padding: 8px;" onclick="addFixedItemRow()">+ 新增固定項目</button>
         <hr style="margin: 20px 0; border: 0.5px solid #eee;">
-        <label class="label">生活費上限</label>
-        <input type="number" id="livingLimit" onchange="triggerUpdate()">
+        <label class="label">生活費上限</label><input type="number" id="livingLimit" onchange="triggerUpdate()">
     </div>
+
+    <button style="background: #34495e; font-size: 12px;" onclick="toggleRawData()">顯示雲端 JSON</button>
+    <div id="rawData" class="raw-data-area"></div>
+    <button style="background:#aaa; margin-top: 10px; font-size: 12px;" onclick="resetData()">清空本月數據</button>
 </div>
 
 <script type="module">
@@ -61,102 +81,153 @@
 
     // 🔴 請在此替換成你自己的 Firebase Config 🔴
     const firebaseConfig = {
-        apiKey: "AIzaSyCgMm4JQ95mH-JOAcBsnlHz9Q7ceiF3H2E",
-        authDomain: "my-finance-app-99fda.firebaseapp.com",
-        projectId: "my-finance-app-99fda",
-        storageBucket: "my-finance-app-99fda.firebasestorage.app",
-        messagingSenderId: "476029346804",
-        appId: "1:476029346804:web:84edfef6015a3900270fa1"
+    apiKey: "AIzaSyCgMm4JQ95mH-JOAcBsnlHz9Q7ceiF3H2E",
+    authDomain: "my-finance-app-99fda.firebaseapp.com",
+    projectId: "my-finance-app-99fda",
+    storageBucket: "my-finance-app-99fda.firebasestorage.app",
+    messagingSenderId: "476029346804",
+    appId: "1:476029346804:web:84edfef6015a3900270fa1"
     };
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
-    const docRef = doc(db, "family_account", "monthly_data");
-
-    let currentData = {
-        salary: 50000,
-        fixedItems: [{name: '房租', amount: 15000}],
-        limit: 15000,
-        spent: 0
-    };
+    
+    let currentData = { salary: 50000, fixedItems: [], limit: 15000, spentFood: 0, spentOther: 0, otherLogs: [] };
     let chart;
+    let unsubscribe = null;
 
-    // 監聽雲端資料 (當家人更新時，你也會立刻更新)
-    onSnapshot(docRef, (docSnap) => {
-        if (docSnap.exists()) {
-            currentData = docSnap.data();
-            renderUI();
-            document.getElementById('status').innerText = "✅ 雲端同步中";
-        } else {
-            document.getElementById('status').innerText = "🆕 初次使用，請開始設定";
+    function initMonthSelector() {
+        const selector = document.getElementById('currentMonth');
+        const now = new Date();
+        for (let i = -6; i <= 6; i++) {
+            const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+            const monthStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            const option = document.createElement('option');
+            option.value = monthStr;
+            option.text = monthStr;
+            if (i === 0) option.selected = true;
+            selector.appendChild(option);
         }
-    });
+    }
+
+    window.switchMonth = () => {
+        const month = document.getElementById('currentMonth').value;
+        if (unsubscribe) unsubscribe();
+        const docRef = doc(db, "family_account_v3", month);
+        unsubscribe = onSnapshot(docRef, (docSnap) => {
+            if (docSnap.exists()) {
+                currentData = docSnap.data();
+            } else {
+                currentData = { salary: 50000, fixedItems: [], limit: 15000, spentFood: 0, spentOther: 0, otherLogs: [] };
+            }
+            renderUI();
+            document.getElementById('status').innerText = `✅ ${month} 同步中`;
+            document.getElementById('rawData').innerText = JSON.stringify(currentData, null, 4);
+        });
+    };
 
     function renderUI() {
-        document.getElementById('salary').value = currentData.salary;
-        document.getElementById('livingLimit').value = currentData.limit;
+        document.getElementById('salary').value = currentData.salary || 0;
+        document.getElementById('livingLimit').value = currentData.limit || 0;
         
         const container = document.getElementById('fixedItemsContainer');
         container.innerHTML = '';
-        currentData.fixedItems.forEach((item, index) => {
+        (currentData.fixedItems || []).forEach((item, index) => {
             const row = document.createElement('div');
             row.className = 'item-row';
             row.innerHTML = `
                 <input type="text" value="${item.name}" onchange="updateItem(${index}, 'name', this.value)">
                 <input type="number" value="${item.amount}" onchange="updateItem(${index}, 'amount', this.value)">
-                <button class="delete-btn" onclick="removeFixedItem(${index})">✕</button>
-            `;
+                <button class="delete-btn" onclick="removeFixedItem(${index})">✕</button>`;
             container.appendChild(row);
         });
 
-        const totalFixed = currentData.fixedItems.reduce((sum, i) => sum + (i.amount || 0), 0);
-        const netBalance = currentData.salary - totalFixed - currentData.spent;
-        
+        const totalFixed = (currentData.fixedItems || []).reduce((sum, i) => sum + (i.amount || 0), 0);
+        const totalSpent = (currentData.spentFood || 0) + (currentData.spentOther || 0);
+        const netBalance = (currentData.salary || 0) - totalFixed - totalSpent;
+
         document.getElementById('netSavings').innerText = `$${Math.round(netBalance).toLocaleString()}`;
-        document.getElementById('livingLeft').innerText = `$${Math.round(currentData.limit - currentData.spent).toLocaleString()}`;
+        document.getElementById('livingLeft').innerText = `$${Math.round((currentData.limit || 0) - totalSpent).toLocaleString()}`;
 
         const ctx = document.getElementById('budgetChart').getContext('2d');
         if (chart) chart.destroy();
         chart = new Chart(ctx, {
             type: 'doughnut',
             data: {
-                labels: ['必要', '生活費', '剩餘'],
-                datasets: [{ data: [totalFixed, currentData.spent, Math.max(0, netBalance)], backgroundColor: ['#3498db', '#e74c3c', '#2ecc71'] }]
+                labels: ['必要', '吃喝', '其他', '剩餘存款'],
+                datasets: [{ 
+                    data: [totalFixed, currentData.spentFood || 0, currentData.spentOther || 0, Math.max(0, netBalance)], 
+                    backgroundColor: ['#3498db', '#ff7675', '#74b9ff', '#2ecc71'] 
+                }]
             }
         });
     }
 
-    // 全域函數讓按鈕可以呼叫
-    window.triggerUpdate = async () => {
-        currentData.salary = parseFloat(document.getElementById('salary').value) || 0;
-        currentData.limit = parseFloat(document.getElementById('livingLimit').value) || 0;
-        await setDoc(docRef, currentData);
-    };
+    async function save() {
+        const month = document.getElementById('currentMonth').value;
+        await setDoc(doc(db, "family_account_v3", month), currentData);
+    }
 
-    window.updateItem = async (index, field, value) => {
-        currentData.fixedItems[index][field] = field === 'amount' ? parseFloat(value) || 0 : value;
-        await setDoc(docRef, currentData);
-    };
-
-    window.addFixedItemRow = async () => {
-        currentData.fixedItems.push({name: '', amount: 0});
-        await setDoc(docRef, currentData);
-    };
-
-    window.removeFixedItem = async (index) => {
-        currentData.fixedItems.splice(index, 1);
-        await setDoc(docRef, currentData);
-    };
-
-    window.handleAddExpense = async () => {
-        const input = document.getElementById('newExpense');
-        const val = parseFloat(input.value);
-        if (val > 0) {
-            currentData.spent += val;
-            input.value = '';
-            await setDoc(docRef, currentData);
+    window.addExpense = async (type) => {
+        if (type === 'food') {
+            const amount = parseFloat(document.getElementById('foodAmount').value) || 0;
+            if (amount > 0) {
+                currentData.spentFood = (currentData.spentFood || 0) + amount;
+                document.getElementById('foodAmount').value = '';
+                await save();
+            }
+        } else {
+            const amount = parseFloat(document.getElementById('otherAmount').value) || 0;
+            const note = document.getElementById('otherNote').value;
+            if (amount > 0) {
+                currentData.spentOther = (currentData.spentOther || 0) + amount;
+                if (!currentData.otherLogs) currentData.otherLogs = [];
+                currentData.otherLogs.push({ amount, note, time: new Date().toLocaleString() });
+                document.getElementById('otherAmount').value = '';
+                document.getElementById('otherNote').value = '';
+                await save();
+            }
         }
     };
+
+    window.triggerUpdate = () => {
+        currentData.salary = parseFloat(document.getElementById('salary').value) || 0;
+        currentData.limit = parseFloat(document.getElementById('livingLimit').value) || 0;
+        save();
+    };
+
+    window.updateItem = (index, field, value) => {
+        currentData.fixedItems[index][field] = field === 'amount' ? parseFloat(value) || 0 : value;
+        save();
+    };
+
+    window.addFixedItemRow = () => {
+        if (!currentData.fixedItems) currentData.fixedItems = [];
+        currentData.fixedItems.push({name: '', amount: 0});
+        save();
+    };
+
+    window.removeFixedItem = (index) => {
+        currentData.fixedItems.splice(index, 1);
+        save();
+    };
+
+    window.toggleRawData = () => {
+        const area = document.getElementById('rawData');
+        area.style.display = area.style.display === 'none' ? 'block' : 'none';
+    };
+
+    window.resetData = async () => {
+        if (confirm('確定重置本月數據？')) {
+            currentData.spentFood = 0;
+            currentData.spentOther = 0;
+            currentData.otherLogs = [];
+            save();
+        }
+    };
+
+    initMonthSelector();
+    switchMonth();
 </script>
 </body>
 </html>
