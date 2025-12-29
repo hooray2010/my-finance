@@ -139,7 +139,7 @@ function renderUI() {
     }, 0);
 
     const totalSpent = spentFood + spentOther; // 總生活費支出
-    const netBalance = salary - totalFixed - totalSpent; // 薪資剩餘
+    const netBalance = salary - totalFixed - limit; // 薪資剩餘
     const livingRemaining = limit - totalSpent; // 生活費剩餘
 
     // 更新介面，加上 Math.round 確保顯示整數，避免 .0000000001 的狀況
