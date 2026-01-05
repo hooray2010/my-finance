@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>團購快速訂購系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .item-card:active { transform: scale(0.95); transition: 0.1s; }
+    </style>
+</head>
+<body class="bg-gray-100 p-5">
+    <div class="max-w-4xl mx-auto">
+        <header class="mb-8 text-center">
+            <h1 class="text-3xl font-bold text-blue-600">快閃團購網</h1>
+            <p class="text-gray-500">點擊圖片即可加入購物清單，資料會自動儲存</p>
+        </header>
+
+        <div id="product-list" class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-10">
+            </div>
+
+        <div class="bg-white p-6 rounded-lg shadow-lg">
+            <h2 class="text-xl font-bold mb-4 border-b pb-2">我的訂購清單 (自動存檔中)</h2>
+            <ul id="cart-list" class="divide-y mb-4">
+                </ul>
+            <div class="text-right font-bold text-xl text-red-500">
+                總計：NT$ <span id="total-price">0</span>
+            </div>
+            <button onclick="submitOrder()" class="w-full mt-4 bg-green-500 text-white py-3 rounded-lg font-bold hover:bg-green-600">
+                確認送出訂單
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // 1. 模擬多品項資料
+        const products = [
+            { id: 1, name: "手作草莓大福", price: 60, img: "https://via.placeholder.com/150?text=Strawberry" },
+            { id: 2, name: "法式原味奶酪", price: 45, img: "https://via.placeholder.com/150?text=Panna+Cotta" },
+            { id: 3, name: "小農鮮乳捲", price: 280, img: "https://via.placeholder.com/150?text=Cake+Roll" }
+        ];
+
+        let cart = JSON.parse(localStorage.getItem('my_groupbuy_cart')) || [];
+
+        // 2. 渲染商品
+        function renderProducts() {
+            const list = document.getElementById('product-list');
+            list.innerHTML = products.map(p => `
+                <div class="item-card bg-white rounded-lg shadow cursor-pointer overflow-hidden" onclick="addToCart(${p.id})">
+                    <img src="${p.img}" class="w-full h-32 object-cover">
+                    <div class="p-3">
+                        <div class="font-bold">${p.name}</div>
+                        <div class="text-blue-500">$${p.price}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 3. 加入購物車並觸發自動儲存
+        function addToCart(id) {
+            const item = products.find(p => p.id === id);
+            const found = cart.find(c => c.id === id);
+            if (found) {
+                found.qty += 1;
+            } else {
+                cart.push({ ...item, qty: 1 });
+            }
+            updateUI();
+        }
+
+        // 4. 更新 UI 與 localStorage (Auto-save)
+        function updateUI() {
+            const list = document.getElementById('cart-list');
+            let total = 0;
+            
+            list.innerHTML = cart.map(c => {
+                total += c.price * c.qty;
+                return `<li class="py-2 flex justify-between items-center">
+                    <span>${c.name} x ${c.qty}</span>
+                    <span>$${c.price * c.qty}</span>
+                </li>`;
+            }).join('');
+
+            document.getElementById('total-price').innerText = total;
+            // 儲存至瀏覽器
+            localStorage.setItem('my_groupbuy_cart', JSON.stringify(cart));
+        }
+
+        function submitOrder() {
+            alert("訂單已傳送！後台報表已更新。");
+            localStorage.removeItem('my_groupbuy_cart');
+            cart = [];
+            updateUI();
+        }
+
+        renderProducts();
+        updateUI();
+    </script>
+</body>
+</html>
