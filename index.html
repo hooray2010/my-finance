@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>家庭雲端帳本</title>
+    <title>家庭雲端帳本 - 10號起算版</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root { --primary: #2ecc71; --danger: #e74c3c; --warning: #f1c40f; --dark: #2c3e50; --gray: #f4f7f6; }
@@ -11,7 +11,7 @@
         .container { max-width: 500px; margin: auto; }
         .card { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 15px; }
         .month-selector { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 20px; }
-        .month-selector select { padding: 10px; border-radius: 8px; border: 1px solid #ddd; font-size: 1rem; font-weight: bold; }
+        .month-selector select { padding: 10px; border-radius: 8px; border: 1px solid #ddd; font-size: 1rem; font-weight: bold; width: 100%; }
         .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
         .stat-box { background: white; padding: 15px; border-radius: 12px; text-align: center; border: 1px solid #eee; }
         .value { font-size: 1.5rem; font-weight: bold; color: var(--dark); display: block; margin-top: 5px; }
@@ -20,14 +20,12 @@
         button { width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; margin-top: 5px; }
         .btn-food { background: #ff7675; margin-bottom: 15px; }
         .btn-other { background: #74b9ff; }
-        
-        /* 管理員設定區塊 - 預設隱藏 */
         #adminPanel { display: none; margin-top: 20px; border-top: 2px dashed #ccc; padding-top: 20px; }
         .admin-toggle { background: none; color: #aaa; font-size: 12px; border: 1px solid #eee; padding: 5px; margin-top: 50px; }
-        
         .item-row { display: grid; grid-template-columns: 1fr 100px 40px; gap: 5px; margin-bottom: 5px; }
         .delete-btn { background: #ff7675; padding: 5px; font-size: 12px; border: none; border-radius: 4px; color: white; }
         .cloud-status { text-align: center; font-size: 12px; color: #2ecc71; margin-bottom: 5px; }
+        pre#rawDataDisplay { background: #2c3e50; color: #ecf0f1; padding: 10px; border-radius: 8px; font-size: 11px; overflow-x: auto; max-height: 200px; text-align: left; }
     </style>
 </head>
 <body>
@@ -67,7 +65,7 @@
 
     <div id="adminPanel">
         <div class="card">
-            <h3>💰 預算管理</h3>
+            <h3>💰 預算管理 (本期設定)</h3>
             <label class="label">總薪資</label><input type="number" id="salary" onchange="triggerUpdate()">
             <label class="label">生活費上限</label><input type="number" id="livingLimit" onchange="triggerUpdate()">
             
@@ -75,6 +73,12 @@
             <div id="fixedItemsContainer"></div>
             <button style="background: #3498db; font-size: 13px; padding: 8px;" onclick="addFixedItemRow()">+ 新增項目</button>
         </div>
+
+        <div class="card">
+            <h3>🔍 Cloud Raw Data</h3>
+            <pre id="rawDataDisplay">等待數據...</pre>
+        </div>
+
         <button style="background:#aaa; margin-top: 10px; font-size: 12px;" onclick="resetData()">🚨 清空本月數據</button>
     </div>
 </div>
@@ -97,16 +101,33 @@
     let currentData = { salary: 50000, fixedItems: [], limit: 12000, spentFood: 0, spentOther: 0, otherLogs: [] };
     let chart;
     let unsubscribe = null;
+    const BILLING_START_DAY = 10;
 
+    // 初始化月份選單，邏輯修改為「10號起算」
     function initMonthSelector() {
         const selector = document.getElementById('currentMonth');
         const now = new Date();
-        for (let i = -6; i <= 6; i++) {
+        const currentDay = now.getDate();
+
+        for (let i = -3; i <= 6; i++) {
+            // 計算每一期的顯示名稱
             const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
             const monthStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            
+            // 下個月的日期區間參考
+            const nextD = new Date(now.getFullYear(), now.getMonth() + i + 1, 0);
+            
             const option = document.createElement('option');
-            option.value = monthStr; option.text = monthStr;
-            if (i === 0) option.selected = true;
+            option.value = monthStr; 
+            option.text = `${monthStr} 期 (${d.getMonth() + 1}/10 - ${ (d.getMonth() + 2) > 12 ? 1 : (d.getMonth() + 2) }/9)`;
+            
+            // 如果今天還沒到 10 號，預設選上個月的帳期
+            if (currentDay < BILLING_START_DAY) {
+                if (i === -1) option.selected = true;
+            } else {
+                if (i === 0) option.selected = true;
+            }
+            
             selector.appendChild(option);
         }
     }
@@ -115,14 +136,16 @@
         const month = document.getElementById('currentMonth').value;
         if (unsubscribe) unsubscribe();
         const docRef = doc(db, "family_account_v3", month);
+        
         unsubscribe = onSnapshot(docRef, (docSnap) => {
             if (docSnap.exists()) {
                 currentData = docSnap.data();
             } else {
-                currentData = { salary: 50000, fixedItems: [], limit: 12000, spentFood: 0, spentOther: 0, otherLogs: [] };
+                // 如果是新帳期，繼承上一次的薪資與預算設定
+                currentData = { ...currentData, spentFood: 0, spentOther: 0, otherLogs: [] };
             }
             renderUI();
-            document.getElementById('status').innerText = `✅ ${month} 已同步`;
+            document.getElementById('status').innerText = `✅ ${month} 帳期已同步`;
         });
     };
 
@@ -133,9 +156,14 @@
         const spentOther = parseFloat(currentData.spentOther) || 0;
         const totalSpent = spentFood + spentOther;
         
+        // 更新管理員輸入框
         document.getElementById('salary').value = salary;
         document.getElementById('livingLimit').value = limit;
 
+        // 顯示 Raw Data
+        document.getElementById('rawDataDisplay').innerText = JSON.stringify(currentData, null, 2);
+
+        // 必要開銷列表渲染
         const container = document.getElementById('fixedItemsContainer');
         container.innerHTML = '';
         (currentData.fixedItems || []).forEach((item, index) => {
@@ -152,6 +180,7 @@
         document.getElementById('netSavings').innerText = `$${Math.round(netBalance).toLocaleString()}`;
         document.getElementById('livingLeft').innerText = `$${Math.round(livingRemaining).toLocaleString()}`;
 
+        // 更新圖表
         const ctx = document.getElementById('budgetChart').getContext('2d');
         if (chart) chart.destroy();
         chart = new Chart(ctx, {
@@ -162,7 +191,8 @@
                     data: [totalFixed, spentFood, spentOther, Math.max(0, netBalance)], 
                     backgroundColor: ['#3498db', '#ff7675', '#74b9ff', '#2ecc71'] 
                 }]
-            }
+            },
+            options: { plugins: { legend: { position: 'bottom' } } }
         });
     }
 
@@ -188,13 +218,11 @@
             document.getElementById('otherNote').value = '';
         }
         await save();
-        alert('紀錄成功！');
     };
 
     window.toggleAdmin = () => {
         const panel = document.getElementById('adminPanel');
         panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
-        if(panel.style.display === 'block') window.scrollTo(0, document.body.scrollHeight);
     };
 
     window.triggerUpdate = () => {
@@ -220,7 +248,7 @@
     };
 
     window.resetData = async () => {
-        if (confirm('確定重置本月數據？')) {
+        if (confirm('確定重置本帳期數據？')) {
             currentData.spentFood = 0; currentData.spentOther = 0; currentData.otherLogs = []; await save();
         }
     };
