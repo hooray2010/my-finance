@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>家庭雲端帳本 - 最終整合版</title>
+    <title>家庭雲端帳本 - 最終完整版</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root { --primary: #2ecc71; --danger: #e74c3c; --warning: #f1c40f; --dark: #2c3e50; --gray: #f4f7f6; }
@@ -21,19 +21,19 @@
         .btn-food { background: #ff7675; margin-bottom: 15px; }
         .btn-other { background: #74b9ff; }
         #adminPanel { display: none; margin-top: 20px; border-top: 2px dashed #ccc; padding-top: 20px; }
-        .admin-toggle { background: none; color: #aaa; font-size: 12px; border: 1px solid #eee; padding: 5px; margin-top: 50px; width: auto; }
+        .admin-toggle { background: none; color: #aaa; font-size: 12px; border: 1px solid #eee; padding: 5px; margin-top: 50px; width: auto; cursor: pointer; }
         .item-row { display: grid; grid-template-columns: 1fr 100px 40px; gap: 5px; margin-bottom: 5px; }
         .delete-btn { background: #ff7675; padding: 5px; font-size: 12px; border: none; border-radius: 4px; color: white; }
-        .cloud-status { text-align: center; font-size: 12px; color: #2ecc71; margin-bottom: 5px; }
+        .cloud-status { text-align: center; font-size: 12px; color: #2ecc71; margin-bottom: 5px; font-weight: bold; }
         pre#rawDataDisplay { background: #2c3e50; color: #ecf0f1; padding: 10px; border-radius: 8px; font-size: 11px; overflow-x: auto; max-height: 200px; text-align: left; }
-        .log-list { font-size: 13px; color: #555; padding-left: 0px; max-height: 200px; overflow-y: auto; }
-        .log-item { padding: 5px 0; border-bottom: 1px solid #eee; }
+        .log-list { font-size: 13px; color: #555; padding: 0; max-height: 200px; overflow-y: auto; }
+        .log-item { padding: 8px 0; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <div id="status" class="cloud-status">雲端同步中...</div>
+    <div id="status" class="cloud-status">☁️ 雲端服務讀取中...</div>
 
     <div class="month-selector">
         <select id="currentMonth" onchange="switchMonth()"></select>
@@ -53,7 +53,7 @@
     <div class="card"><canvas id="budgetChart" style="max-height: 180px;"></canvas></div>
 
     <div class="card" id="detailCard" style="display:none;">
-        <h3 style="margin:0 0 10px 0; font-size: 16px;">📝 本期明細 (10號起算)</h3>
+        <h3 style="margin:0 0 10px 0; font-size: 16px;">📝 本期消費流水 (10號結算制)</h3>
         <div id="combinedLogs" class="log-list"></div>
     </div>
 
@@ -68,7 +68,7 @@
         <button class="btn-other" onclick="addExpense('other')">確認紀錄</button>
     </div>
 
-    <center><button class="admin-toggle" onclick="toggleAdmin()">⚙️ 管理員與雲端設定</button></center>
+    <center><button class="admin-toggle" onclick="toggleAdmin()">⚙️ 管理員設定與原始數據</button></center>
 
     <div id="adminPanel">
         <div class="card">
@@ -76,13 +76,13 @@
             <label class="label">總薪資</label><input type="number" id="salary" onchange="triggerUpdate()">
             <label class="label">生活費上限</label><input type="number" id="livingLimit" onchange="triggerUpdate()">
             <div id="fixedItemsContainer"></div>
-            <button style="background: #3498db; font-size: 13px; padding: 8px;" onclick="addFixedItemRow()">+ 新增必要開銷</button>
+            <button style="background: #3498db; font-size: 13px; padding: 8px;" onclick="addFixedItemRow()">+ 新增必要開銷項目</button>
         </div>
         <div class="card">
-            <h3>🔍 Firebase Raw Data</h3>
-            <pre id="rawDataDisplay"></pre>
+            <h3>🔍 Firebase 雲端原始 JSON</h3>
+            <pre id="rawDataDisplay">等待數據...</pre>
         </div>
-        <button style="background:#aaa; margin-top: 10px; font-size: 12px;" onclick="resetData()">🚨 重置本期數據</button>
+        <button style="background:#aaa; margin-top: 10px; font-size: 12px;" onclick="resetData()">🚨 重置本帳期所有數據</button>
     </div>
 </div>
 
@@ -90,8 +90,9 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
     import { getFirestore, doc, onSnapshot, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-    // --- 設定區 ---
+    // --- ⚠️ 重要：請在此處填入您的 Google Sheets URL ---
     const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbxgIXPEQLKINxnmGCUYbINmvW6cGK7c6EU4AzeYFOWM0jZeIU7cr7c6KXoThpuXDe0/exec"; 
+
     const firebaseConfig = {
         apiKey: "AIzaSyCgMm4JQ95mH-JOAcBsnlHz9Q7ceiF3H2E",
         authDomain: "my-finance-app-99fda.firebaseapp.com",
@@ -108,7 +109,6 @@
     let unsubscribe = null;
     const BILLING_START_DAY = 10;
 
-    // 帳期判定：10號以前算上個月
     function getBillingMonth(date) {
         let year = date.getFullYear();
         let month = date.getMonth();
@@ -144,7 +144,7 @@
                 currentData = { ...currentData, foodLogs: [], otherLogs: [] };
             }
             renderUI();
-            document.getElementById('status').innerText = `✅ ${month} 同步成功`;
+            document.getElementById('status').innerText = `✅ ${month} 帳期已同步`;
         });
     };
 
@@ -156,17 +156,16 @@
         
         document.getElementById('rawDataDisplay').innerText = JSON.stringify(currentData, null, 2);
 
-        // 渲染明細
         const logContainer = document.getElementById('combinedLogs');
         const allLogs = [
-            ...foodLogs.map(l => ({...l, typeIcon: '🍔'})),
-            ...otherLogs.map(l => ({...l, typeIcon: '📦'}))
+            ...foodLogs.map(l => ({...l, typeIcon: '🍔', typeName: '吃喝'})),
+            ...otherLogs.map(l => ({...l, typeIcon: '📦', typeName: '其他'}))
         ].sort((a, b) => new Date(b.time) - new Date(a.time));
 
         if (allLogs.length > 0) {
             document.getElementById('detailCard').style.display = 'block';
             logContainer.innerHTML = allLogs.map(l => 
-                `<div class="log-item"><span>${l.time.split(',')[1] || l.time}</span> <b>${l.typeIcon} $${l.amount}</b> <i>${l.note || ''}</i></div>`
+                `<div class="log-item"><span>${l.time.split(',')[1] || l.time}</span> <b>${l.typeIcon} $${l.amount}</b> <span>${l.note || ''}</span></div>`
             ).join('');
         } else {
             document.getElementById('detailCard').style.display = 'none';
@@ -181,13 +180,12 @@
         document.getElementById('netSavings').innerText = `$${Math.round(netBalance).toLocaleString()}`;
         document.getElementById('livingLeft').innerText = `$${Math.round(livingRemaining).toLocaleString()}`;
 
-        // 更新圖表
         const ctx = document.getElementById('budgetChart').getContext('2d');
         if (chart) chart.destroy();
         chart = new Chart(ctx, {
             type: 'doughnut',
             data: {
-                labels: ['必要', '吃喝', '其他', '存款'],
+                labels: ['必要開銷', '吃喝', '其他', '預計存款'],
                 datasets: [{ data: [totalFixed, spentFood, spentOther, Math.max(0, netBalance)], backgroundColor: ['#3498db', '#ff7675', '#74b9ff', '#2ecc71'] }]
             },
             options: { plugins: { legend: { position: 'bottom' } } }
@@ -207,7 +205,6 @@
         });
     }
 
-    // --- 儲存主程式：同時儲存 Firebase 與 Google Sheets ---
     window.addExpense = async (type) => {
         const inputId = type === 'food' ? 'foodAmount' : 'otherAmount';
         const val = parseFloat(document.getElementById(inputId).value) || 0;
@@ -217,49 +214,55 @@
         const targetMonth = getBillingMonth(now); 
         const docRef = doc(db, "family_account_v3", targetMonth);
         
-        document.getElementById('status').innerText = `⏳ 同步中...`;
+        document.getElementById('status').innerText = `⏳ 雙雲端同步中...`;
 
-        // 1. 取得最新雲端資料
-        const docSnap = await getDoc(docRef);
-        let targetData = docSnap.exists() ? docSnap.data() : { salary: 50000, fixedItems: [], limit: 12000, foodLogs: [], otherLogs: [] };
+        try {
+            const docSnap = await getDoc(docRef);
+            let targetData = docSnap.exists() ? docSnap.data() : { salary: 50000, fixedItems: [], limit: 12000, foodLogs: [], otherLogs: [] };
 
-        const note = type === 'food' ? '吃喝紀錄' : document.getElementById('otherNote').value;
-        const newEntry = { amount: val, time: now.toLocaleString(), note: note };
+            const note = type === 'food' ? '吃喝紀錄' : document.getElementById('otherNote').value;
+            const newEntry = { amount: val, time: now.toLocaleString(), note: note };
 
-        if (type === 'food') {
-            if (!targetData.foodLogs) targetData.foodLogs = [];
-            targetData.foodLogs.push(newEntry);
-        } else {
-            if (!targetData.otherLogs) targetData.otherLogs = [];
-            targetData.otherLogs.push(newEntry);
+            if (type === 'food') {
+                if (!targetData.foodLogs) targetData.foodLogs = [];
+                targetData.foodLogs.push(newEntry);
+            } else {
+                if (!targetData.otherLogs) targetData.otherLogs = [];
+                targetData.otherLogs.push(newEntry);
+            }
+
+            // 1. 存入 Firebase
+            await setDoc(docRef, targetData);
+
+            // 2. 存入 Google Sheets (使用優化後的 fetch)
+            if (GOOGLE_SHEET_URL && GOOGLE_SHEET_URL.includes("https")) {
+                fetch(GOOGLE_SHEET_URL, {
+                    method: "POST",
+                    mode: "no-cors",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        time: now.toLocaleString(),
+                        billingMonth: targetMonth,
+                        type: type === 'food' ? '吃喝' : '其他',
+                        amount: val,
+                        note: note
+                    })
+                });
+            }
+
+            document.getElementById(inputId).value = '';
+            if (type === 'other') document.getElementById('otherNote').value = '';
+            
+            if (document.getElementById('currentMonth').value !== targetMonth) {
+                document.getElementById('currentMonth').value = targetMonth;
+                switchMonth();
+            }
+            document.getElementById('status').innerText = `✅ 已同步至雙雲端 (Firebase & Sheets)`;
+
+        } catch (e) {
+            console.error(e);
+            document.getElementById('status').innerText = `❌ 同步失敗: ${e.message}`;
         }
-
-        // 2. 存入 Firebase
-        await setDoc(docRef, targetData);
-
-        // 3. 存入 Google Sheets
-        if (GOOGLE_SHEET_URL !== "https://script.google.com/macros/s/AKfycbxgIXPEQLKINxnmGCUYbINmvW6cGK7c6EU4AzeYFOWM0jZeIU7cr7c6KXoThpuXDe0/exec") {
-            fetch(GOOGLE_SHEET_URL, {
-                method: "POST",
-                mode: "no-cors",
-                body: JSON.stringify({
-                    time: now.toLocaleString(),
-                    billingMonth: targetMonth,
-                    type: type,
-                    amount: val,
-                    note: note
-                })
-            });
-        }
-
-        document.getElementById(inputId).value = '';
-        if (type === 'other') document.getElementById('otherNote').value = '';
-        
-        if (document.getElementById('currentMonth').value !== targetMonth) {
-            document.getElementById('currentMonth').value = targetMonth;
-            switchMonth();
-        }
-        document.getElementById('status').innerText = `✅ 已同步至雙雲端`;
     };
 
     window.save = async () => { const m = document.getElementById('currentMonth').value; await setDoc(doc(db, "family_account_v3", m), currentData); };
@@ -268,7 +271,7 @@
     window.addFixedItemRow = () => { if(!currentData.fixedItems) currentData.fixedItems=[]; currentData.fixedItems.push({name:'', amount:0}); window.save(); };
     window.removeFixedItem = (i) => { currentData.fixedItems.splice(i,1); window.save(); };
     window.toggleAdmin = () => { const p = document.getElementById('adminPanel'); p.style.display = p.style.display==='block'?'none':'block'; };
-    window.resetData = async () => { if(confirm('確定重置？')){ currentData.foodLogs=[]; currentData.otherLogs=[]; window.save(); }};
+    window.resetData = async () => { if(confirm('確定要重置目前帳期的所有紀錄嗎？(無法復原)')){ currentData.foodLogs=[]; currentData.otherLogs=[]; window.save(); }};
 
     initMonthSelector();
     switchMonth();
