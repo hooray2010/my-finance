@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>家庭雲端帳本 - 智慧帳期版</title>
+    <title>家庭雲端帳本 - 最終整合版</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root { --primary: #2ecc71; --danger: #e74c3c; --warning: #f1c40f; --dark: #2c3e50; --gray: #f4f7f6; }
@@ -26,6 +26,8 @@
         .delete-btn { background: #ff7675; padding: 5px; font-size: 12px; border: none; border-radius: 4px; color: white; }
         .cloud-status { text-align: center; font-size: 12px; color: #2ecc71; margin-bottom: 5px; }
         pre#rawDataDisplay { background: #2c3e50; color: #ecf0f1; padding: 10px; border-radius: 8px; font-size: 11px; overflow-x: auto; max-height: 200px; text-align: left; }
+        .log-list { font-size: 13px; color: #555; padding-left: 0px; max-height: 200px; overflow-y: auto; }
+        .log-item { padding: 5px 0; border-bottom: 1px solid #eee; }
     </style>
 </head>
 <body>
@@ -50,8 +52,13 @@
 
     <div class="card"><canvas id="budgetChart" style="max-height: 180px;"></canvas></div>
 
+    <div class="card" id="detailCard" style="display:none;">
+        <h3 style="margin:0 0 10px 0; font-size: 16px;">📝 本期明細 (10號起算)</h3>
+        <div id="combinedLogs" class="log-list"></div>
+    </div>
+
     <div class="card">
-        <h3 style="margin-top:0">🍔 紀錄吃喝 (10號起算)</h3>
+        <h3 style="margin-top:0">🍔 紀錄吃喝</h3>
         <input type="number" id="foodAmount" placeholder="輸入金額" inputmode="numeric">
         <button class="btn-food" onclick="addExpense('food')">確認紀錄</button>
 
@@ -61,25 +68,21 @@
         <button class="btn-other" onclick="addExpense('other')">確認紀錄</button>
     </div>
 
-    <center><button class="admin-toggle" onclick="toggleAdmin()">⚙️ 管理員與 Raw Data</button></center>
+    <center><button class="admin-toggle" onclick="toggleAdmin()">⚙️ 管理員與雲端設定</button></center>
 
     <div id="adminPanel">
         <div class="card">
-            <h3>💰 預算管理 (本期設定)</h3>
+            <h3>💰 預算管理</h3>
             <label class="label">總薪資</label><input type="number" id="salary" onchange="triggerUpdate()">
             <label class="label">生活費上限</label><input type="number" id="livingLimit" onchange="triggerUpdate()">
-            
-            <label class="label">必要開銷項目</label>
             <div id="fixedItemsContainer"></div>
-            <button style="background: #3498db; font-size: 13px; padding: 8px;" onclick="addFixedItemRow()">+ 新增項目</button>
+            <button style="background: #3498db; font-size: 13px; padding: 8px;" onclick="addFixedItemRow()">+ 新增必要開銷</button>
         </div>
-
         <div class="card">
-            <h3>🔍 Cloud Raw Data (JSON)</h3>
-            <pre id="rawDataDisplay">等待數據...</pre>
+            <h3>🔍 Firebase Raw Data</h3>
+            <pre id="rawDataDisplay"></pre>
         </div>
-
-        <button style="background:#aaa; margin-top: 10px; font-size: 12px;" onclick="resetData()">🚨 清空目前顯示帳期數據</button>
+        <button style="background:#aaa; margin-top: 10px; font-size: 12px;" onclick="resetData()">🚨 重置本期數據</button>
     </div>
 </div>
 
@@ -87,6 +90,8 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
     import { getFirestore, doc, onSnapshot, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+    // --- 設定區 ---
+    const GOOGLE_SHEET_URL = "您的試算表部署網址填在這裡"; 
     const firebaseConfig = {
         apiKey: "AIzaSyCgMm4JQ95mH-JOAcBsnlHz9Q7ceiF3H2E",
         authDomain: "my-finance-app-99fda.firebaseapp.com",
@@ -98,12 +103,12 @@
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
-    let currentData = { salary: 50000, fixedItems: [], limit: 12000, spentFood: 0, spentOther: 0, otherLogs: [] };
+    let currentData = { salary: 50000, fixedItems: [], limit: 12000, foodLogs: [], otherLogs: [] };
     let chart;
     let unsubscribe = null;
     const BILLING_START_DAY = 10;
 
-    // --- 核心邏輯：判定日期屬於哪個帳期 ---
+    // 帳期判定：10號以前算上個月
     function getBillingMonth(date) {
         let year = date.getFullYear();
         let month = date.getMonth();
@@ -118,18 +123,12 @@
         const selector = document.getElementById('currentMonth');
         const now = new Date();
         const targetValue = getBillingMonth(now);
-
         for (let i = -3; i <= 6; i++) {
             const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
             const monthStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-            
             const option = document.createElement('option');
             option.value = monthStr; 
-            // 顯示文字輔助理解
-            const displayMonth = d.getMonth() + 1;
-            const nextMonth = displayMonth === 12 ? 1 : displayMonth + 1;
-            option.text = `${monthStr} 帳期 (${displayMonth}/10 - ${nextMonth}/9)`;
-            
+            option.text = `${monthStr} 帳期 (10號起算)`;
             if (monthStr === targetValue) option.selected = true;
             selector.appendChild(option);
         }
@@ -138,31 +137,66 @@
     window.switchMonth = () => {
         const month = document.getElementById('currentMonth').value;
         if (unsubscribe) unsubscribe();
-        const docRef = doc(db, "family_account_v3", month);
-        
-        unsubscribe = onSnapshot(docRef, (docSnap) => {
+        unsubscribe = onSnapshot(doc(db, "family_account_v3", month), (docSnap) => {
             if (docSnap.exists()) {
                 currentData = docSnap.data();
             } else {
-                // 新帳期預設繼承上期預算配置
-                currentData = { ...currentData, spentFood: 0, spentOther: 0, otherLogs: [] };
+                currentData = { ...currentData, foodLogs: [], otherLogs: [] };
             }
             renderUI();
-            document.getElementById('status').innerText = `✅ 已切換至 ${month} 帳期`;
+            document.getElementById('status').innerText = `✅ ${month} 同步成功`;
         });
     };
 
     function renderUI() {
-        const salary = parseFloat(currentData.salary) || 0;
-        const limit = parseFloat(currentData.limit) || 0;
-        const spentFood = parseFloat(currentData.spentFood) || 0;
-        const spentOther = parseFloat(currentData.spentOther) || 0;
-        const totalSpent = spentFood + spentOther;
+        const foodLogs = currentData.foodLogs || [];
+        const otherLogs = currentData.otherLogs || [];
+        const spentFood = foodLogs.reduce((sum, log) => sum + (parseFloat(log.amount) || 0), 0);
+        const spentOther = otherLogs.reduce((sum, log) => sum + (parseFloat(log.amount) || 0), 0);
         
-        document.getElementById('salary').value = salary;
-        document.getElementById('livingLimit').value = limit;
         document.getElementById('rawDataDisplay').innerText = JSON.stringify(currentData, null, 2);
 
+        // 渲染明細
+        const logContainer = document.getElementById('combinedLogs');
+        const allLogs = [
+            ...foodLogs.map(l => ({...l, typeIcon: '🍔'})),
+            ...otherLogs.map(l => ({...l, typeIcon: '📦'}))
+        ].sort((a, b) => new Date(b.time) - new Date(a.time));
+
+        if (allLogs.length > 0) {
+            document.getElementById('detailCard').style.display = 'block';
+            logContainer.innerHTML = allLogs.map(l => 
+                `<div class="log-item"><span>${l.time.split(',')[1] || l.time}</span> <b>${l.typeIcon} $${l.amount}</b> <i>${l.note || ''}</i></div>`
+            ).join('');
+        } else {
+            document.getElementById('detailCard').style.display = 'none';
+        }
+
+        const salary = parseFloat(currentData.salary) || 0;
+        const limit = parseFloat(currentData.limit) || 0;
+        const totalFixed = (currentData.fixedItems || []).reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
+        const netBalance = salary - totalFixed - limit;
+        const livingRemaining = limit - (spentFood + spentOther);
+
+        document.getElementById('netSavings').innerText = `$${Math.round(netBalance).toLocaleString()}`;
+        document.getElementById('livingLeft').innerText = `$${Math.round(livingRemaining).toLocaleString()}`;
+
+        // 更新圖表
+        const ctx = document.getElementById('budgetChart').getContext('2d');
+        if (chart) chart.destroy();
+        chart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['必要', '吃喝', '其他', '存款'],
+                datasets: [{ data: [totalFixed, spentFood, spentOther, Math.max(0, netBalance)], backgroundColor: ['#3498db', '#ff7675', '#74b9ff', '#2ecc71'] }]
+            },
+            options: { plugins: { legend: { position: 'bottom' } } }
+        });
+
+        renderFixedItems();
+    }
+
+    function renderFixedItems() {
         const container = document.getElementById('fixedItemsContainer');
         container.innerHTML = '';
         (currentData.fixedItems || []).forEach((item, index) => {
@@ -171,104 +205,70 @@
             row.innerHTML = `<input type="text" value="${item.name}" onchange="updateItem(${index}, 'name', this.value)"><input type="number" value="${item.amount}" onchange="updateItem(${index}, 'amount', this.value)"><button class="delete-btn" onclick="removeFixedItem(${index})">✕</button>`;
             container.appendChild(row);
         });
-
-        const totalFixed = (currentData.fixedItems || []).reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
-        const netBalance = salary - totalFixed - limit;
-        const livingRemaining = limit - totalSpent;
-
-        document.getElementById('netSavings').innerText = `$${Math.round(netBalance).toLocaleString()}`;
-        document.getElementById('livingLeft').innerText = `$${Math.round(livingRemaining).toLocaleString()}`;
-
-        const ctx = document.getElementById('budgetChart').getContext('2d');
-        if (chart) chart.destroy();
-        chart = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: ['必要開銷', '吃喝', '其他', '預計存款'],
-                datasets: [{ 
-                    data: [totalFixed, spentFood, spentOther, Math.max(0, netBalance)], 
-                    backgroundColor: ['#3498db', '#ff7675', '#74b9ff', '#2ecc71'] 
-                }]
-            },
-            options: { plugins: { legend: { position: 'bottom' } } }
-        });
     }
 
-    // --- 修改：儲存時自動判定帳期 ---
+    // --- 儲存主程式：同時儲存 Firebase 與 Google Sheets ---
     window.addExpense = async (type) => {
         const inputId = type === 'food' ? 'foodAmount' : 'otherAmount';
         const val = parseFloat(document.getElementById(inputId).value) || 0;
         if (val <= 0) return;
 
         const now = new Date();
-        const targetMonth = getBillingMonth(now); // 自動判斷 10 號帳期
+        const targetMonth = getBillingMonth(now); 
         const docRef = doc(db, "family_account_v3", targetMonth);
         
-        document.getElementById('status').innerText = `⏳ 正在存入 ${targetMonth}...`;
+        document.getElementById('status').innerText = `⏳ 同步中...`;
 
+        // 1. 取得最新雲端資料
         const docSnap = await getDoc(docRef);
-        let targetData = docSnap.exists() ? docSnap.data() : { ...currentData, spentFood: 0, spentOther: 0, otherLogs: [] };
+        let targetData = docSnap.exists() ? docSnap.data() : { salary: 50000, fixedItems: [], limit: 12000, foodLogs: [], otherLogs: [] };
+
+        const note = type === 'food' ? '吃喝紀錄' : document.getElementById('otherNote').value;
+        const newEntry = { amount: val, time: now.toLocaleString(), note: note };
 
         if (type === 'food') {
-            targetData.spentFood = (parseFloat(targetData.spentFood) || 0) + val;
+            if (!targetData.foodLogs) targetData.foodLogs = [];
+            targetData.foodLogs.push(newEntry);
         } else {
-            targetData.spentOther = (parseFloat(targetData.spentOther) || 0) + val;
-            const note = document.getElementById('otherNote').value;
             if (!targetData.otherLogs) targetData.otherLogs = [];
-            targetData.otherLogs.push({ amount: val, note, time: now.toLocaleString() });
+            targetData.otherLogs.push(newEntry);
         }
 
+        // 2. 存入 Firebase
         await setDoc(docRef, targetData);
-        
+
+        // 3. 存入 Google Sheets
+        if (GOOGLE_SHEET_URL !== "https://script.google.com/macros/s/AKfycbxgIXPEQLKINxnmGCUYbINmvW6cGK7c6EU4AzeYFOWM0jZeIU7cr7c6KXoThpuXDe0/exec") {
+            fetch(GOOGLE_SHEET_URL, {
+                method: "POST",
+                mode: "no-cors",
+                body: JSON.stringify({
+                    time: now.toLocaleString(),
+                    billingMonth: targetMonth,
+                    type: type,
+                    amount: val,
+                    note: note
+                })
+            });
+        }
+
         document.getElementById(inputId).value = '';
         if (type === 'other') document.getElementById('otherNote').value = '';
         
-        // 若當前正查看該帳期，onSnapshot 會自動 renderUI
-        // 若查看的是別月，則跳轉過去
         if (document.getElementById('currentMonth').value !== targetMonth) {
             document.getElementById('currentMonth').value = targetMonth;
             switchMonth();
         }
-        alert(`成功！已記錄至 ${targetMonth} 帳期`);
+        document.getElementById('status').innerText = `✅ 已同步至雙雲端`;
     };
 
-    window.save = async () => {
-        const month = document.getElementById('currentMonth').value;
-        await setDoc(doc(db, "family_account_v3", month), currentData);
-    };
-
-    window.toggleAdmin = () => {
-        const panel = document.getElementById('adminPanel');
-        panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
-    };
-
-    window.triggerUpdate = () => {
-        currentData.salary = parseFloat(document.getElementById('salary').value) || 0;
-        currentData.limit = parseFloat(document.getElementById('livingLimit').value) || 0;
-        window.save();
-    };
-
-    window.updateItem = (index, field, value) => {
-        currentData.fixedItems[index][field] = field === 'amount' ? parseFloat(value) || 0 : value;
-        window.save();
-    };
-
-    window.addFixedItemRow = () => {
-        if (!currentData.fixedItems) currentData.fixedItems = [];
-        currentData.fixedItems.push({name: '', amount: 0});
-        window.save();
-    };
-
-    window.removeFixedItem = (index) => {
-        currentData.fixedItems.splice(index, 1);
-        window.save();
-    };
-
-    window.resetData = async () => {
-        if (confirm('確定重置目前顯示帳期的數據？')) {
-            currentData.spentFood = 0; currentData.spentOther = 0; currentData.otherLogs = []; window.save();
-        }
-    };
+    window.save = async () => { const m = document.getElementById('currentMonth').value; await setDoc(doc(db, "family_account_v3", m), currentData); };
+    window.triggerUpdate = () => { currentData.salary = parseFloat(document.getElementById('salary').value); currentData.limit = parseFloat(document.getElementById('livingLimit').value); window.save(); };
+    window.updateItem = (i, f, v) => { currentData.fixedItems[i][f] = f==='amount'?parseFloat(v):v; window.save(); };
+    window.addFixedItemRow = () => { if(!currentData.fixedItems) currentData.fixedItems=[]; currentData.fixedItems.push({name:'', amount:0}); window.save(); };
+    window.removeFixedItem = (i) => { currentData.fixedItems.splice(i,1); window.save(); };
+    window.toggleAdmin = () => { const p = document.getElementById('adminPanel'); p.style.display = p.style.display==='block'?'none':'block'; };
+    window.resetData = async () => { if(confirm('確定重置？')){ currentData.foodLogs=[]; currentData.otherLogs=[]; window.save(); }};
 
     initMonthSelector();
     switchMonth();
